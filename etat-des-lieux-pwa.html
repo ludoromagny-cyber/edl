@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#4c1d95">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Etat des Lieux">
+<title>Etat des Lieux</title>
+<link rel="manifest" href="manifest.json">
+
+<!-- Icone inline pour iOS -->
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%234c1d95'/><text y='70' x='50' text-anchor='middle' font-size='60'>🏠</text></svg>">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: system-ui, -apple-system, sans-serif; background: #1e1b4b; overscroll-behavior: none; }
+input, select, textarea, button { font-family: inherit; }
+:root { --v: #4c1d95; --vl: #7c3aed; --vll: #ede9fe; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect } = React;
+
+const PIECES = [
+  { id: "entree", label: "Entree / Couloir", icon: "🚪" },
+  { id: "sejour", label: "Sejour / Salon", icon: "🛋️" },
+  { id: "chambre", label: "Chambre", icon: "🛏️" },
+  { id: "cuisine", label: "Cuisine", icon: "🍳" },
+  { id: "sdb", label: "Salle de bain", icon: "🚿" },
+  { id: "wc", label: "WC", icon: "🚽" },
+  { id: "cave", label: "Cave / Grenier", icon: "📦" },
+];
+const ETATS = ["Neuf", "Tres bon", "Bon", "Usure normale", "Mauvais etat", "A remplacer"];
+const ETAT_COLORS = { "Neuf":"#22c55e","Tres bon":"#84cc16","Bon":"#eab308","Usure normale":"#f97316","Mauvais etat":"#ef4444","A remplacer":"#991b1b" };
+const ELEMENTS = {
+  entree: ["Porte entree","Serrure","Sonnette","Boite aux lettres","Sol","Murs","Plafond","Eclairage"],
+  sejour: ["Sol","Murs","Plafond","Fenetres","Volets/Stores","Eclairage","Prises","Radiateur"],
+  chambre: ["Sol","Murs","Plafond","Fenetres","Volets/Stores","Placards","Eclairage","Prises"],
+  cuisine: ["Sol","Murs","Plafond","Plaques cuisson","Four","Refrigerateur","Evier","Robinetterie","Meubles","Hotte"],
+  sdb: ["Sol","Murs","Plafond","Douche/Baignoire","Robinetterie","Lavabo","Miroir","Rangements","VMC"],
+  wc: ["Sol","Murs","Cuvette","Chasse eau","Abattant"],
+  cave: ["Sol","Murs","Porte","Eclairage"],
+};
+
+function EtatBadge({ etat }) {
+  if (!etat) return null;
+  const c = ETAT_COLORS[etat] || "#aaa";
+  return <span style={{background:c+"22",color:c,border:`1px solid ${c}66`,borderRadius:999,padding:"2px 9px",fontSize:11,fontWeight:700}}>{etat}</span>;
+}
+
+function PhotoCapture({ photos, onAdd, onRemove }) {
+  const handleChange = (e) => {
+    Array.from(e.target.files).forEach(file => {
+      // Compresser avant stockage
+      const img = new Image();
+      const reader = new FileReader();
+      reader.onload = ev => {
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const max = 800;
+          let w = img.width, h = img.height;
+          if (w > max || h > max) {
+            if (w > h) { h = h * max / w; w = max; }
+            else { w = w * max / h; h = max; }
+          }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          onAdd({ url: canvas.toDataURL("image/jpeg", 0.7) });
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = "";
+  };
+
+  return (
+    <div>
+      <label style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 18px",borderRadius:12,background:"#7c3aed",color:"#fff",fontSize:14,fontWeight:700,marginBottom:10,cursor:"pointer"}}>
+        📷 Ajouter des photos
+        <input type="file" accept="image/*" multiple onChange={handleChange} style={{display:"none"}} />
+      </label>
+      {photos.length > 0 && (
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {photos.map((p,i) => (
+            <div key={i} style={{position:"relative"}}>
+              <img src={p.url} style={{width:72,height:72,objectFit:"cover",borderRadius:8,border:"2px solid #ddd6fe",display:"block"}} />
+              <button onClick={()=>onRemove(i)} style={{position:"absolute",top:-6,right:-6,background:"#ef4444",color:"#fff",border:"none",borderRadius:"50%",width:20,height:20,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SignatureCanvas({ onSave, label }) {
+  const canvasRef = useRef();
+  const drawing = useRef(false);
+  const lastPos = useRef(null);
+  const getPos = (e, canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    const src = e.touches ? e.touches[0] : e;
+    return { x:(src.clientX-rect.left)*(canvas.width/rect.width), y:(src.clientY-rect.top)*(canvas.height/rect.height) };
+  };
+  const start = useCallback(e => { e.preventDefault(); drawing.current=true; lastPos.current=getPos(e,canvasRef.current); },[]);
+  const move = useCallback(e => {
+    if(!drawing.current) return; e.preventDefault();
+    const canvas=canvasRef.current, ctx=canvas.getContext("2d"), pos=getPos(e,canvas);
+    ctx.strokeStyle="#1e1b4b"; ctx.lineWidth=2.5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(lastPos.current.x,lastPos.current.y); ctx.lineTo(pos.x,pos.y); ctx.stroke();
+    lastPos.current=pos;
+  },[]);
+  const stop = useCallback(()=>{ drawing.current=false; if(canvasRef.current) onSave(canvasRef.current.toDataURL()); },[onSave]);
+  const clear = ()=>{ canvasRef.current.getContext("2d").clearRect(0,0,600,150); onSave(null); };
+  return (
+    <div style={{marginBottom:16}}>
+      <div style={{fontSize:13,fontWeight:600,color:"#4c1d95",marginBottom:6}}>{label}</div>
+      <div style={{border:"2px solid #ddd6fe",borderRadius:10,overflow:"hidden",background:"#faf5ff",position:"relative",touchAction:"none"}}>
+        <canvas ref={canvasRef} width={600} height={150} style={{display:"block",width:"100%",cursor:"crosshair"}}
+          onMouseDown={start} onMouseMove={move} onMouseUp={stop} onMouseLeave={stop}
+          onTouchStart={start} onTouchMove={move} onTouchEnd={stop} />
+        <div style={{position:"absolute",bottom:6,left:10,fontSize:11,color:"#c4b5fd",pointerEvents:"none"}}>Signez ici avec votre doigt</div>
+      </div>
+      <button onClick={clear} style={{marginTop:6,background:"none",border:"1px solid #ddd6fe",color:"#7c3aed",borderRadius:8,padding:"5px 14px",cursor:"pointer",fontSize:12}}>Effacer</button>
+    </div>
+  );
+}
+
+function generatePDF(data) {
+  const { jsPDF } = window.jspdf;
+  const { type, logement, locataire, date, pieces, sigBailleur, sigLocataire } = data;
+  const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
+  const W=210, M=14; let y=0;
+  const newPage=()=>{ doc.addPage(); y=14; };
+  const checkY=(n=10)=>{ if(y+n>282) newPage(); };
+  const V=[76,29,149], VL=[237,233,254], GR=[110,110,110], BK=[30,27,75];
+
+  doc.setFillColor(...V); doc.rect(0,0,W,26,"F");
+  doc.setTextColor(255,255,255); doc.setFontSize(15); doc.setFont("helvetica","bold");
+  doc.text("ETAT DES LIEUX "+(type==="entree"?"D'ENTREE":"DE SORTIE"), M, 12);
+  doc.setFontSize(8); doc.setFont("helvetica","normal");
+  doc.text("Genere le "+new Date().toLocaleDateString("fr-FR"), M, 21);
+  y=34;
+
+  const bW=(W-M*2-5)/2, bH=28;
+  [{title:"LOGEMENT",lines:["Adresse : "+(logement.adresse||"-"),"Type : "+(logement.type||"-")+"  Surface : "+(logement.surface||"-")+" m2","Etage : "+(logement.etage||"-")+"  Compteurs : "+(logement.compteurs||"-")]},
+   {title:"PARTIES",lines:["Bailleur : "+(logement.bailleur||"-"),"Locataire : "+(locataire.nom||"-"),"Date : "+(date||"-")+"  Tel : "+(locataire.tel||"-")]}
+  ].forEach(({title,lines},i)=>{
+    const bx=M+i*(bW+5);
+    doc.setFillColor(...VL); doc.roundedRect(bx,y,bW,bH,2,2,"F");
+    doc.setTextColor(...V); doc.setFontSize(6.5); doc.setFont("helvetica","bold"); doc.text(title,bx+3,y+5);
+    doc.setTextColor(...BK); doc.setFontSize(8); doc.setFont("helvetica","normal");
+    lines.forEach((l,li)=>doc.text(l,bx+3,y+11+li*6,{maxWidth:bW-5}));
+  });
+  y+=bH+8;
+
+  for(const piece of pieces.filter(p=>p.active)){
+    checkY(18);
+    doc.setFillColor(...V); doc.rect(M,y,W-M*2,7,"F");
+    doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont("helvetica","bold");
+    doc.text(piece.label,M+3,y+5); y+=8;
+    const cols=[50,31,31,64];
+    doc.setFillColor(...VL); doc.rect(M,y,W-M*2,6,"F");
+    doc.setTextColor(...V); doc.setFontSize(7); doc.setFont("helvetica","bold");
+    let cx=M+2;
+    ["Element","Entree","Sortie","Observations"].forEach((h,i)=>{ doc.text(h,cx,y+4.2); cx+=cols[i]; });
+    y+=7;
+    doc.setFont("helvetica","normal");
+    for(const el of piece.elements){
+      const obsLines=doc.splitTextToSize(el.obs||"",cols[3]-3);
+      const rowH=Math.max(7,obsLines.length*4.5+3);
+      checkY(rowH);
+      doc.setDrawColor(220,214,254); doc.line(M,y+rowH,W-M,y+rowH);
+      doc.setTextColor(...BK); doc.setFontSize(7.5);
+      cx=M+2; doc.text(el.nom,cx,y+5); cx+=cols[0];
+      [el.etatEntree,el.etatSortie].forEach(etat=>{
+        if(etat){
+          const ec={"Neuf":[34,197,94],"Tres bon":[132,204,22],"Bon":[234,179,8],"Usure normale":[249,115,22],"Mauvais etat":[239,68,68],"A remplacer":[153,27,27]};
+          const c=ec[etat]||[150,150,150];
+          doc.setDrawColor(...c); doc.setFillColor(c[0],c[1],c[2]);
+          doc.roundedRect(cx,y+1.5,27,4.5,1,1,"D");
+          doc.setTextColor(...c); doc.setFontSize(6); doc.setFont("helvetica","bold");
+          doc.text(etat,cx+1.5,y+5);
+          doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(...BK);
+        }
+        cx+=31;
+      });
+      doc.setTextColor(...GR); doc.setFontSize(7);
+      obsLines.forEach((line,li)=>doc.text(line,cx,y+5+li*4.5));
+      doc.setTextColor(...BK); doc.setFontSize(7.5); y+=rowH;
+    }
+    if(piece.note){ checkY(7); doc.setTextColor(...GR); doc.setFontSize(7); doc.setFont("helvetica","italic"); doc.text("Note : "+piece.note,M+2,y+4,{maxWidth:W-M*2-4}); doc.setFont("helvetica","normal"); y+=8; }
+    if(piece.photos?.length>0){
+      checkY(32); let px=M;
+      for(const photo of piece.photos.slice(0,5)){ try{ doc.addImage(photo.url,"JPEG",px,y,26,26,undefined,"FAST"); px+=28; }catch{} }
+      y+=30;
+    }
+    y+=5;
+  }
+
+  checkY(40);
+  doc.setDrawColor(...V); doc.line(M,y,W-M,y); y+=8;
+  const sW=(W-M*2-10)/2;
+  [{label:"Bailleur / Mandataire",nom:logement.bailleur,img:sigBailleur},{label:"Locataire",nom:locataire.nom,img:sigLocataire}].forEach((s,i)=>{
+    const sx=M+i*(sW+10);
+    doc.setTextColor(...V); doc.setFontSize(6.5); doc.setFont("helvetica","bold"); doc.text(s.label.toUpperCase(),sx,y+4);
+    if(s.img){ try{ doc.addImage(s.img,"PNG",sx,y+6,sW,18,undefined,"FAST"); }catch{} }
+    doc.setDrawColor(...V); doc.line(sx,y+27,sx+sW,y+27);
+    doc.setTextColor(...BK); doc.setFontSize(8); doc.setFont("helvetica","normal"); doc.text(s.nom||"",sx,y+33);
+  });
+  const total=doc.internal.getNumberOfPages();
+  for(let i=1;i<=total;i++){ doc.setPage(i); doc.setFontSize(7); doc.setTextColor(167,139,250); doc.text(`Etat des lieux - ${logement.adresse||""} - Page ${i}/${total}`,W/2,292,{align:"center"}); }
+
+  // Telechargement direct
+  doc.save(`etat-des-lieux-${type}-${date||"sans-date"}.pdf`);
+}
+
+function App() {
+  const [step, setStep] = useState(0);
+  const [type, setType] = useState("entree");
+  const [generating, setGenerating] = useState(false);
+  const [logement, setLogement] = useState({adresse:"",type:"",surface:"",etage:"",bailleur:"",compteurs:""});
+  const [locataire, setLocataire] = useState({nom:"",tel:"",email:""});
+  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
+  const [pieces, setPieces] = useState(PIECES.map(p=>({
+    ...p, active:["entree","sejour","chambre","cuisine","sdb","wc"].includes(p.id),
+    note:"", photos:[],
+    elements:ELEMENTS[p.id].map(nom=>({nom,etatEntree:"",etatSortie:"",obs:""}))
+  })));
+  const [currentPiece, setCurrentPiece] = useState(0);
+  const [sigBailleur, setSigBailleur] = useState(null);
+  const [sigLocataire, setSigLocataire] = useState(null);
+  const [exported, setExported] = useState(false);
+
+  const activePieces = pieces.filter(p=>p.active);
+  const pieceGlobalIdx = i => pieces.findIndex(p=>p.id===activePieces[i]?.id);
+  const updateElement=(pi,ei,field,value)=>setPieces(prev=>prev.map((p,pidx)=>pidx!==pi?p:{...p,elements:p.elements.map((el,eidx)=>eidx!==ei?el:{...el,[field]:value})}));
+  const updatePiece=(pi,field,value)=>setPieces(prev=>prev.map((p,pidx)=>pidx!==pi?p:{...p,[field]:value}));
+  const togglePiece=id=>setPieces(prev=>prev.map(p=>p.id===id?{...p,active:!p.active}:p));
+
+  const handleExport=()=>{
+    setGenerating(true);
+    try{ generatePDF({type,logement,locataire,date,pieces,sigBailleur,sigLocataire}); setExported(true); }
+    catch(e){ alert("Erreur : "+e.message); }
+    finally{ setGenerating(false); }
+  };
+
+  const canSign = sigBailleur && sigLocataire;
+
+  const inp = {width:"100%",padding:"11px 13px",borderRadius:10,border:"2px solid #e9d5ff",fontSize:15,outline:"none",background:"#faf5ff",boxSizing:"border-box"};
+  const btn = (primary,full) => ({
+    padding:"13px 22px", borderRadius:12, border:"none",
+    background: primary?"linear-gradient(135deg,#7c3aed,#4c1d95)":"#f0ebff",
+    color: primary?"#fff":"#4c1d95",
+    fontSize:14, fontWeight:700, cursor:"pointer",
+    width: full?"100%":"auto",
+    display:"block"
+  });
+  const chip = a => ({padding:"9px 14px",borderRadius:20,border:"2px solid",cursor:"pointer",fontSize:13,fontWeight:600,borderColor:a?"#7c3aed":"#ddd6fe",background:a?"#7c3aed":"#fff",color:a?"#fff":"#7c3aed"});
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#4c1d95",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.5px"};
+  const sec = {fontSize:14,fontWeight:700,color:"#4c1d95",borderBottom:"2px solid #ede9fe",paddingBottom:6,marginBottom:12,marginTop:8};
+
+  return (
+    <div style={{minHeight:"100vh",minHeight:"100dvh",background:"linear-gradient(135deg,#1e1b4b,#4c1d95)",display:"flex",flexDirection:"column",alignItems:"center",padding:"16px 12px 40px"}}>
+
+      <div style={{color:"#fff",textAlign:"center",marginBottom:16}}>
+        <div style={{fontSize:26,fontWeight:900,letterSpacing:2}}>🏠 ETAT DES LIEUX</div>
+        <div style={{opacity:.6,fontSize:12,marginTop:2}}>Application de gestion locative</div>
+      </div>
+
+      <div style={{background:"#fff",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,.35)",width:"100%",maxWidth:640,overflow:"hidden"}}>
+
+        {/* Header */}
+        <div style={{background:"linear-gradient(90deg,#4c1d95,#7c3aed)",padding:"16px 20px 12px",color:"#fff"}}>
+          <div style={{fontSize:17,fontWeight:700}}>{["📋 Informations","🔍 Inspection","✍️ Signatures","✅ Recapitulatif"][step]}</div>
+          <div style={{opacity:.75,fontSize:12,marginTop:2}}>{type==="entree"?"Entree":"Sortie"} — {date}</div>
+        </div>
+
+        {/* Steps */}
+        <div style={{display:"flex",borderBottom:"2px solid #f0ebff"}}>
+          {["Infos","Pieces","Sig.","Recap"].map((s,i)=>(
+            <button key={i} onClick={()=>step>i&&setStep(i)} style={{flex:1,padding:"11px 4px",fontSize:11,fontWeight:700,background:step===i?"#f5f3ff":"#fff",color:step===i?"#4c1d95":step>i?"#7c3aed":"#c4b5fd",border:"none",borderBottom:step===i?"3px solid #7c3aed":"3px solid transparent",cursor:step>i?"pointer":"default",textTransform:"uppercase"}}>
+              {step>i?"✓ ":""}{s}
+            </button>
+          ))}
+        </div>
+
+        <div style={{padding:"18px 18px"}}>
+
+          {/* STEP 0 */}
+          {step===0&&(
+            <div>
+              <div style={{marginBottom:16}}>
+                <div style={lbl}>Type</div>
+                <div style={{display:"flex",gap:10}}>
+                  {["entree","sortie"].map(t=>(
+                    <button key={t} onClick={()=>setType(t)} style={{flex:1,padding:12,borderRadius:10,border:"2px solid",borderColor:type===t?"#7c3aed":"#ddd6fe",background:type===t?"#7c3aed":"#faf5ff",color:type===t?"#fff":"#7c3aed",fontWeight:700,cursor:"pointer",fontSize:14}}>
+                      {t==="entree"?"🔑 Entree":"📤 Sortie"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={sec}>🏠 Logement</div>
+              <div style={{marginBottom:12}}><label style={lbl}>Adresse</label><input style={inp} placeholder="15 rue des Lilas, 75011 Paris" value={logement.adresse} onChange={e=>setLogement(p=>({...p,adresse:e.target.value}))}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div><label style={lbl}>Type logement</label>
+                  <select style={{...inp}} value={logement.type} onChange={e=>setLogement(p=>({...p,type:e.target.value}))}>
+                    <option value="">—</option>
+                    {["Studio","T1","T2","T3","T4+","Maison"].map(t=><option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div><label style={lbl}>Surface (m2)</label><input style={inp} type="number" placeholder="28" value={logement.surface} onChange={e=>setLogement(p=>({...p,surface:e.target.value}))}/></div>
+                <div><label style={lbl}>Etage</label><input style={inp} placeholder="3eme" value={logement.etage} onChange={e=>setLogement(p=>({...p,etage:e.target.value}))}/></div>
+                <div><label style={lbl}>Compteurs</label><input style={inp} placeholder="Elec: 1234" value={logement.compteurs} onChange={e=>setLogement(p=>({...p,compteurs:e.target.value}))}/></div>
+              </div>
+              <div style={{marginBottom:12}}><label style={lbl}>Bailleur</label><input style={inp} placeholder="Nom complet" value={logement.bailleur} onChange={e=>setLogement(p=>({...p,bailleur:e.target.value}))}/></div>
+
+              <div style={sec}>👤 Locataire</div>
+              <div style={{marginBottom:12}}><label style={lbl}>Nom complet</label><input style={inp} placeholder="Prenom NOM" value={locataire.nom} onChange={e=>setLocataire(p=>({...p,nom:e.target.value}))}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div><label style={lbl}>Telephone</label><input style={inp} placeholder="06 XX XX XX XX" value={locataire.tel} onChange={e=>setLocataire(p=>({...p,tel:e.target.value}))}/></div>
+                <div><label style={lbl}>Email</label><input style={inp} placeholder="email@..." value={locataire.email} onChange={e=>setLocataire(p=>({...p,email:e.target.value}))}/></div>
+              </div>
+              <div style={{marginBottom:16}}><label style={lbl}>Date</label><input style={inp} type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+
+              <div style={sec}>📐 Pieces</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
+                {pieces.map(p=><button key={p.id} style={chip(p.active)} onClick={()=>togglePiece(p.id)}>{p.icon} {p.label}</button>)}
+              </div>
+              <button style={btn(true,true)} onClick={()=>setStep(1)}>Commencer l'inspection →</button>
+            </div>
+          )}
+
+          {/* STEP 1 */}
+          {step===1&&(
+            <div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+                {activePieces.map((p,i)=><button key={p.id} style={chip(currentPiece===i)} onClick={()=>setCurrentPiece(i)}>{p.icon} {p.label}</button>)}
+              </div>
+              {activePieces[currentPiece]&&(()=>{
+                const pi=pieceGlobalIdx(currentPiece);
+                const piece=pieces[pi];
+                return (
+                  <div>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                      <span style={{fontSize:24}}>{piece.icon}</span>
+                      <span style={{fontSize:16,fontWeight:700,color:"#4c1d95"}}>{piece.label}</span>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"2fr 1.1fr 1.1fr",gap:8,marginBottom:4}}>
+                      {["Element","Entree","Sortie"].map(h=><div key={h} style={{fontSize:10,color:"#a78bfa",fontWeight:700,textTransform:"uppercase"}}>{h}</div>)}
+                    </div>
+                    {piece.elements.map((el,ei)=>(
+                      <div key={ei}>
+                        <div style={{display:"grid",gridTemplateColumns:"2fr 1.1fr 1.1fr",gap:8,marginBottom:4,alignItems:"center"}}>
+                          <div style={{fontSize:13,fontWeight:600,color:"#312e81"}}>{el.nom}</div>
+                          {["etatEntree","etatSortie"].map(field=>(
+                            <select key={field} value={el[field]} onChange={e=>updateElement(pi,ei,field,e.target.value)}
+                              style={{padding:"8px 6px",borderRadius:8,border:"2px solid",borderColor:el[field]?(ETAT_COLORS[el[field]]||"#e9d5ff")+"88":"#e9d5ff",fontSize:12,background:"#faf5ff"}}>
+                              <option value="">—</option>
+                              {ETATS.map(et=><option key={et}>{et}</option>)}
+                            </select>
+                          ))}
+                        </div>
+                        <div style={{marginBottom:10}}>
+                          <input style={{...inp,fontSize:13,padding:"8px 10px"}} placeholder="Observations..." value={el.obs} onChange={e=>updateElement(pi,ei,"obs",e.target.value)}/>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{marginTop:14}}>
+                      <label style={lbl}>Note generale</label>
+                      <textarea style={{...inp,minHeight:52,resize:"vertical"}} placeholder="Observations generales..." value={piece.note} onChange={e=>updatePiece(pi,"note",e.target.value)}/>
+                    </div>
+                    <div style={{marginTop:14}}>
+                      <label style={lbl}>Photos</label>
+                      <PhotoCapture photos={piece.photos}
+                        onAdd={p=>updatePiece(pi,"photos",[...piece.photos,p])}
+                        onRemove={i=>updatePiece(pi,"photos",piece.photos.filter((_,idx)=>idx!==i))}/>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginTop:20,gap:10}}>
+                      <button style={btn(false)} onClick={()=>currentPiece>0&&setCurrentPiece(p=>p-1)} disabled={currentPiece===0}>← Prec.</button>
+                      {currentPiece<activePieces.length-1
+                        ?<button style={btn(true)} onClick={()=>setCurrentPiece(p=>p+1)}>Suivant →</button>
+                        :<button style={btn(true)} onClick={()=>setStep(2)}>Signatures →</button>}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* STEP 2 */}
+          {step===2&&(
+            <div>
+              <div style={{background:"#f5f3ff",borderRadius:10,padding:"12px 14px",marginBottom:14,fontSize:13,color:"#4c1d95"}}>
+                ℹ️ Signez dans les zones ci-dessous avec votre doigt.
+              </div>
+              <SignatureCanvas label={`Signature du bailleur — ${logement.bailleur||"Bailleur"}`} onSave={setSigBailleur}/>
+              <SignatureCanvas label={`Signature du locataire — ${locataire.nom||"Locataire"}`} onSave={setSigLocataire}/>
+              {!canSign&&<div style={{color:"#f97316",fontSize:12,marginBottom:10}}>⚠️ Les deux signatures sont requises.</div>}
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,marginTop:14}}>
+                <button style={btn(false)} onClick={()=>setStep(1)}>← Retour</button>
+                <button style={{...btn(canSign),opacity:canSign?1:0.5}} onClick={()=>canSign&&setStep(3)} disabled={!canSign}>Finaliser →</button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 3 */}
+          {step===3&&(
+            <div>
+              <div style={{background:"#f5f3ff",border:"2px solid #ddd6fe",borderRadius:12,padding:14,marginBottom:16}}>
+                <div style={{fontSize:15,fontWeight:700,color:"#4c1d95",marginBottom:8}}>{type==="entree"?"🔑 Entree":"📤 Sortie"} — {logement.adresse||"Logement"}</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:13}}>
+                  <div><b>Locataire :</b> {locataire.nom||"—"}</div>
+                  <div><b>Bailleur :</b> {logement.bailleur||"—"}</div>
+                  <div><b>Date :</b> {date}</div>
+                  <div><b>Surface :</b> {logement.surface||"—"} m2</div>
+                </div>
+              </div>
+
+              {activePieces.map((piece,i)=>{
+                const pi=pieceGlobalIdx(i);
+                const p=pieces[pi];
+                const anomalies=p.elements.filter(el=>el.etatEntree&&el.etatSortie&&el.etatEntree!==el.etatSortie);
+                return (
+                  <div key={piece.id} style={{borderLeft:"3px solid #7c3aed",paddingLeft:12,marginBottom:14}}>
+                    <div style={{fontWeight:700,color:"#4c1d95",marginBottom:6}}>{piece.icon} {piece.label}</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                      {p.elements.filter(el=>el.etatEntree||el.etatSortie).map((el,ei)=>(
+                        <div key={ei} style={{background:"#f5f3ff",borderRadius:7,padding:"3px 8px",fontSize:11}}>
+                          {el.nom} : <EtatBadge etat={el.etatEntree}/> → <EtatBadge etat={el.etatSortie}/>
+                        </div>
+                      ))}
+                    </div>
+                    {anomalies.length>0&&<div style={{marginTop:5,fontSize:12,color:"#dc2626"}}>⚠️ {anomalies.length} changement(s)</div>}
+                  </div>
+                );
+              })}
+
+              <button onClick={handleExport} disabled={generating} style={{...btn(true,true),marginTop:18,fontSize:15,padding:14,opacity:generating?0.6:1}}>
+                {generating?"⏳ Generation...":"📥 Telecharger le PDF"}
+              </button>
+              {exported&&(
+                <div style={{marginTop:10,padding:"12px 14px",background:"#f0fdf4",border:"2px solid #bbf7d0",borderRadius:10,color:"#166534",fontSize:13,fontWeight:600}}>
+                  ✅ PDF telecharge dans vos fichiers !
+                </div>
+              )}
+              <button style={{...btn(false,true),marginTop:10}} onClick={()=>setStep(2)}>← Modifier</button>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+
+<script>
+// Service Worker pour mode hors ligne
+if('serviceWorker' in navigator){
+  const swCode = `
+    const CACHE = 'edl-v1';
+    const URLS = ['/'];
+    self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(URLS))));
+    self.addEventListener('fetch', e => e.respondWith(caches.match(e.request).then(r => r || fetch(e.request))));
+  `;
+  const blob = new Blob([swCode], {type:'application/javascript'});
+  navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(()=>{});
+}
+
+// Prompt installation Android
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Afficher un bouton d'installation après 3 secondes
+  setTimeout(() => {
+    if(deferredPrompt) {
+      const banner = document.createElement('div');
+      banner.innerHTML = `
+        <div style="position:fixed;bottom:0;left:0;right:0;background:#4c1d95;color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;z-index:9999;font-family:system-ui;box-shadow:0 -4px 20px rgba(0,0,0,.3)">
+          <div>
+            <div style="font-weight:700;font-size:14px">📲 Installer l'application</div>
+            <div style="font-size:12px;opacity:.8">Acces rapide depuis votre ecran d'accueil</div>
+          </div>
+          <button id="installBtn" style="background:#fff;color:#4c1d95;border:none;padding:10px 18px;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer">Installer</button>
+        </div>`;
+      document.body.appendChild(banner);
+      document.getElementById('installBtn').onclick = async () => {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        banner.remove();
+      };
+    }
+  }, 3000);
+});
+</script>
+</body>
+</html>
